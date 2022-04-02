@@ -104,6 +104,77 @@ def generate_click_task_data(batch_size, seq_len, n_neuron, recall_duration, p_g
 
     return input_spikes, input_nums, target_nums, target_mask
 
+#p_group?
+
+#test
+import numpy as np
+import numpy.random as rd
+
+batch_size = 16
+seq_len = 150
+n_neuron = 100
+recall_duration = 50
+p_group = 0.5
+f0=0.5
+n_cues = 2
+t_cue = 100
+t_interval = 150
+n_input_symbols = 4
+
+def generate_xor_task_data(batch_size, seq_len, n_neuron, recall_duration, p_group, f0=0.5,
+                             n_cues=2, t_cue=100, t_interval=150,
+                             n_input_symbols=4):
+    t_seq = seq_len
+    n_channel = n_neuron // n_input_symbols
+
+    # randomly assign group A and B
+    #prob_choices = np.array([p_group, 1 - p_group], dtype=np.float32)
+    #idx = rd.choice([0, 1], batch_size)
+    #probs = np.zeros((batch_size, 2), dtype=np.float32)
+
+    #e.g. probs[1,0] = p_group or 1-p_group with equal prob, according to idx
+    # = in batch 1, probability cues are 0 ('left'). By making p_group closer to 0.5, we make the task harder.
+    # by making this randomized, we make it so that the bias could be either to the left or the right.
+
+    # assign input spike probabilities
+    #probs[:, 0] = prob_choices[idx]
+    #probs[:, 1] = prob_choices[1 - idx]
+
+    cue_assignments = np.zeros((batch_size, n_cues), dtype=np.int)
+    # for each example in batch, draw which cues are going to be active (left or right)
+    for b in range(batch_size):
+        cue_assignments[b, :] = rd.choice([0, 1], n_cues)
+
+    # generate input nums - 0: left, 1: right, 2:recall, 3:background noise
+    input_nums = 3*np.ones((batch_size, seq_len), dtype=np.int)
+    input_nums[:, :n_cues] = cue_assignments
+    input_nums[:, -1] = 2
+
+    # generate input spikes
+    input_spike_prob = np.zeros((batch_size, t_seq, n_neuron))
+    d_silence = t_interval - t_cue
+    for b in range(batch_size):
+        for k in range(n_cues):
+            c = cue_assignments[b, k]
+            idx = k
+            input_spike_prob[b, d_silence+idx*t_interval:d_silence+idx*t_interval+t_cue, c*n_channel:(c+1)*n_channel] = f0
+
+    # recall cue
+    input_spike_prob[:, -recall_duration:, 2*n_channel:3*n_channel] = f0
+    # background noise
+    input_spike_prob[:, :, 3*n_channel:] = f0/4.
+    input_spikes = generate_poisson_noise_np(input_spike_prob)
+
+    # generate targets
+    target_mask = np.zeros((batch_size, seq_len), dtype=np.bool)
+    target_mask[:, -1] = True
+    target_nums = np.zeros((batch_size, seq_len), dtype=np.int)
+
+    #target_nums[:, :] = np.transpose(np.tile(np.sum(cue_assignments, axis=1) > int(n_cues/2), (seq_len, 1)))
+    target_nums[:, :] = np.transpose(np.tile(np.logical_xor(cue_assignments[:,0],cue_assignments[:,1]), (seq_len, 1)))
+
+    return input_spikes, input_nums, target_nums, target_mask
+
 
 # raster plot
 def update_plot(plot_result_values, ax_list, plot_traces=False, batch=0, n_max_neuron_per_raster=10, title=None,

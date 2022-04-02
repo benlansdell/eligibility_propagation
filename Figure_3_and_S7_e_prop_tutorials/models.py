@@ -2,13 +2,15 @@
 # Full paper: A solution to the learning dilemma for recurrent networks of spiking neurons
 # Authors: G Bellec*, F Scherr*, A Subramoney, E Hajek, Darjan Salaj, R Legenstein, W Maass
 
-import tensorflow as tf
+#import tensorflow as tf
+import tensorflow.compat.v1 as tf
 import numpy as np
 from collections import namedtuple
 
-Cell = tf.contrib.rnn.BasicRNNCell
+#Cell = tf.contrib.rnn.BasicRNNCell
+Cell = tf.nn.rnn_cell.BasicRNNCell
+#Cell = tf.compat.v1.nn.rnn_cell.BasicRNNCell
 LightLIFStateTuple = namedtuple('LightLIFStateTuple', ('v', 'z'))
-
 
 def sum_of_sines_target(seq_len, n_sines=4, periods=[1000, 500, 333, 200], weights=None, phases=None, normalize=True):
     '''
@@ -37,18 +39,18 @@ def sum_of_sines_target(seq_len, n_sines=4, periods=[1000, 500, 333, 200], weigh
     return output
 
 
-def pseudo_derivative(v_scaled, dampening_factor):
+def pseudo_derivative(v_scaled, dampening_factor, window_size = 1.0):
     '''
     Define the pseudo derivative used to derive through spikes.
     :param v_scaled: scaled version of the voltage being 0 at threshold and -1 at rest
     :param dampening_factor: parameter that stabilizes learning
     :return:
     '''
-    return tf.maximum(1 - tf.abs(v_scaled), 0) * dampening_factor
+    return tf.maximum(1 - tf.abs(v_scaled)/window_size, 0) * dampening_factor / window_size
 
 
 @tf.custom_gradient
-def SpikeFunction(v_scaled, dampening_factor):
+def SpikeFunction(v_scaled, dampening_factor, window_size = 1.0):
     '''
     The tensorflow function which is defined as a Heaviside function (to compute the spikes),
     but with a gradient defined with the pseudo derivative.
@@ -61,18 +63,18 @@ def SpikeFunction(v_scaled, dampening_factor):
 
     def grad(dy):
         dE_dz = dy
-        dz_dv_scaled = pseudo_derivative(v_scaled, dampening_factor)
+        dz_dv_scaled = pseudo_derivative(v_scaled, dampening_factor, window_size)
         dE_dv_scaled = dE_dz * dz_dv_scaled
 
         return [dE_dv_scaled,
-                tf.zeros_like(dampening_factor)]
+                tf.zeros_like(dampening_factor), tf.zeros_like(window_size)]
 
     return tf.identity(z_, name="SpikeFunction"), grad
 
 
 class LightLIF(Cell):
     def __init__(self, n_in, n_rec, tau=20., thr=0.615, dt=1., dtype=tf.float32, dampening_factor=0.3,
-                 stop_z_gradients=False):
+                 stop_z_gradients=False, sigma = 0.05, c_coeff = 0.5, window_size = 1.0):
         '''
         A tensorflow RNN cell model to simulate Learky Integrate and Fire (LIF) neurons.
 
@@ -90,11 +92,15 @@ class LightLIF(Cell):
         '''
 
         self.dampening_factor = dampening_factor
+        self.window_size = window_size
         self.dt = dt
         self.n_in = n_in
         self.n_rec = n_rec
         self.data_type = dtype
         self.stop_z_gradients = stop_z_gradients
+
+        self.c_coeff = c_coeff
+        self.sigma = sigma
 
         self._num_units = self.n_rec
 
@@ -139,12 +145,19 @@ class LightLIF(Cell):
 
         # update the voltage
         i_t = tf.matmul(inputs, self.w_in_val) + tf.matmul(z, self.w_rec_val)
+
+        #TODO Add noise!
+        shared_noise = tf.random.normal(i_t.shape[0])
+        private_noise = tf.random.normal(i_t.shape)
+        noise = np.sqrt(self.c_coeff)*shared_noise + np.sqrt(1-self.c_coeff)*private_noise
+        i_t += noise*self.sigma
+
         I_reset = z * self.thr * self.dt
         new_v = decay * v + (1 - decay) * i_t - I_reset
 
         # Spike generation
         v_scaled = (new_v - thr) / thr
-        new_z = SpikeFunction(v_scaled, self.dampening_factor)
+        new_z = SpikeFunction(v_scaled, self.dampening_factor, self.window_size)
         new_z = new_z * 1 / self.dt
         new_state = LightLIFStateTuple(v=new_v, z=new_z)
         return [new_z, new_v], new_state
@@ -159,11 +172,12 @@ LightALIFStateTuple = namedtuple('LightALIFState', (
 class LightALIF(LightLIF):
     def __init__(self, n_in, n_rec, tau=20., thr=0.03, dt=1., dtype=tf.float32, dampening_factor=0.3,
                  tau_adaptation=200., beta=1.6,
-                 stop_z_gradients=False):
+                 stop_z_gradients=False, window_size = 1.0, sigma = 0, c_coeff = 0):
 
         super(LightALIF, self).__init__(n_in=n_in, n_rec=n_rec, tau=tau, thr=thr, dt=dt,
                                         dtype=dtype, dampening_factor=dampening_factor,
-                                        stop_z_gradients=stop_z_gradients)
+                                        stop_z_gradients=stop_z_gradients, window_size = window_size,
+                                        sigma = sigma, c_coeff=c_coeff)
         self.tau_adaptation = tau_adaptation
         self.beta = beta
         self.decay_b = np.exp(-dt / tau_adaptation)
@@ -196,12 +210,19 @@ class LightALIF(LightLIF):
 
         # update the voltage
         i_t = tf.matmul(inputs, self.w_in_val) + tf.matmul(z, self.w_rec_val)
+
+        #TODO Add noise!
+        shared_noise = tf.random.normal(i_t.shape[0])
+        private_noise = tf.random.normal(i_t.shape)
+        noise = np.sqrt(self.c_coeff)*shared_noise + np.sqrt(1-self.c_coeff)*private_noise
+        i_t += noise*self.sigma
+
         I_reset = z * self.thr * self.dt
         new_v = decay * v + (1 - decay) * i_t - I_reset
 
         # Spike generation
         v_scaled = (new_v - thr) / thr
-        new_z = SpikeFunction(v_scaled, self.dampening_factor)
+        new_z = SpikeFunction(v_scaled, self.dampening_factor, self.window_size)
         new_z = new_z * 1 / self.dt
 
         new_state = LightALIFStateTuple(v=new_v,z=new_z, b=new_b)
@@ -213,7 +234,7 @@ EligALIFStateTuple = namedtuple('EligALIFStateTuple', ('s', 'z', 'z_local', 'r')
 class EligALIF():
     def __init__(self, n_in, n_rec, tau=20., thr=0.03, dt=1., dtype=tf.float32, dampening_factor=0.3,
                  tau_adaptation=200., beta=1.6,
-                 stop_z_gradients=False, n_refractory=1):
+                 stop_z_gradients=False, n_refractory=1, window_size = 1.0, sigma = 0, c_coeff = 0):
 
         if tau_adaptation is None: raise ValueError("alpha parameter for adaptive bias must be set")
         if beta is None: raise ValueError("beta parameter for adaptive bias must be set")
@@ -230,6 +251,9 @@ class EligALIF():
         dt = tf.cast(dt, dtype=dtype)
 
         self.dampening_factor = dampening_factor
+        self.window_size = window_size
+        self.sigma = sigma
+        self.c_coeff = c_coeff
         self.stop_z_gradients = stop_z_gradients
         self.dt = dt
         self.n_in = n_in
@@ -276,7 +300,7 @@ class EligALIF():
     def compute_z(self, v, b):
         adaptive_thr = self.thr + b * self.beta
         v_scaled = (v - adaptive_thr) / self.thr
-        z = SpikeFunction(v_scaled, self.dampening_factor)
+        z = SpikeFunction(v_scaled, self.dampening_factor, self.window_size)
         z = z * 1 / self.dt
         return z
 
@@ -308,6 +332,13 @@ class EligALIF():
         new_b = self.decay_b * b + z_local # threshold update does not have to depend on the stopped-gradient-z, it's local
 
         i_t = tf.matmul(inputs, self.w_in_val) + tf.matmul(z, self.w_rec_val) # gradients are blocked in spike transmission
+
+        #TODO Add noise!
+        shared_noise = tf.random.normal([i_t.shape[0], 1])
+        private_noise = tf.random.normal(i_t.shape)
+        noise = np.sqrt(self.c_coeff)*shared_noise + np.sqrt(1-self.c_coeff)*private_noise
+        i_t += noise*self.sigma
+
         I_reset = z * self.thr * self.dt
         new_v = decay * v + i_t - I_reset
 
@@ -336,7 +367,10 @@ class EligALIF():
         v_scaled = tf.transpose(v_scaled, perm=[1, 0, 2])
         z_post = tf.transpose(z_post, perm=[1, 0, 2])
 
-        psi_no_ref = self.dampening_factor / self.thr * tf.maximum(0., 1. - tf.abs(v_scaled))
+        #Orig
+        #psi_no_ref = self.dampening_factor / self.thr * tf.maximum(0., 1. - tf.abs(v_scaled))
+        #Updated
+        psi_no_ref = self.dampening_factor / self.thr * tf.maximum(0., 1. - tf.abs(v_scaled)/self.window_size) / self.window_size
 
         update_refractory = lambda refractory_count, z_post:\
             tf.where(z_post > 0,tf.ones_like(refractory_count) * (n_ref - 1),tf.maximum(0, refractory_count - 1))
