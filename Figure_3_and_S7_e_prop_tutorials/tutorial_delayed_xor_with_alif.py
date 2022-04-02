@@ -19,26 +19,31 @@
 
 import argparse
 import pickle
-from curses import window
+
 parser = argparse.ArgumentParser()
 parser.add_argument("outfile", type=str, help="Path to save results to")
-parser.add_argument("--plotfile", type=str, default = None, help="Path to save plot to (of final run)")
-parser.add_argument("--sigma", type=float, default = 10.0, help="noise magnitude")
-parser.add_argument("--c_coeff", type=float, default = 1.0, help="correlation coefficient between noise given to all neurons")
-parser.add_argument("--discont_w", type=float, default = 1.0, help="width of discontinuity approximation (RDD window size)")
+parser.add_argument("plot_file", type=str, help="Path to save plot to (of final run)")
+parser.add_argument("sigma", type=float, help="noise magnitude")
+parser.add_argument("c_coeff", type=float, help="correlation coefficient between noise given to all neurons")
+parser.add_argument("discont_w", type=float, help="width of discontinuity approximation (RDD window size)")
 
+#CLI
 args = parser.parse_args()
+
+#Test args
+#args = parser.parse_args(["test", "test", "0.1", "0.1", "0.1"])
+
 fn_out = args.outfile
 
 window_size = args.discont_w
 sigma = args.sigma
 c_coeff = args.c_coeff
-plot_out = args.plotfile
+plot_out = args.plot_file
 
 import datetime
 import socket
 from time import time
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 import numpy as np
 import numpy.random as rd
 #import tensorflow as tf
@@ -50,11 +55,12 @@ from models import EligALIF, exp_convolve
 
 FLAGS = tf.app.flags.FLAGS
 start_time = datetime.datetime.now()
+
 # training parameters
 tf.app.flags.DEFINE_integer('n_batch', 64, 'batch size')
-tf.app.flags.DEFINE_integer('n_iter', 2000, 'total number of iterations')
+tf.app.flags.DEFINE_integer('n_iter', 1000, 'total number of iterations')
 tf.app.flags.DEFINE_float('learning_rate', 0.005, 'Base learning rate.')
-tf.app.flags.DEFINE_float('stop_crit', 0.02, 'Stopping criterion. Stops training if error goes below this value')
+tf.app.flags.DEFINE_float('stop_crit', 0.07, 'Stopping criterion. Stops training if error goes below this value')
 tf.app.flags.DEFINE_integer('print_every', 10, 'Print every')
 tf.app.flags.DEFINE_integer('validate_every', 20, 'validate every')
 
@@ -68,7 +74,7 @@ tf.app.flags.DEFINE_string('f_regularization_type', 'simple', '["simple", "onlin
 # neuron model and simulation parameters
 tf.app.flags.DEFINE_float('tau_a', 2000, 'model alpha - threshold decay [ms]')
 tf.app.flags.DEFINE_float('thr', 0.6, 'threshold at which the LSNN neurons spike')
-tf.app.flags.DEFINE_float('tau_v', 20, 'tau for filtered_z decay in LSNN  neurons [ms]')
+tf.app.flags.DEFINE_float('tau_v', 20, 'tau for filtered_z decay in LSNN neurons [ms]')
 tf.app.flags.DEFINE_float('tau_out', 20, 'tau for filtered_z decay in output neurons [ms]')
 tf.app.flags.DEFINE_float('reg_f', 1, 'regularization coefficient for firing rate')
 tf.app.flags.DEFINE_integer('reg_rate', 10, 'target firing rate for regularization [Hz]')
@@ -90,6 +96,11 @@ assert FLAGS.feedback in ['random', 'symmetric']
 
 # Experiment parameters
 t_cue_spacing = 150  # distance between two consecutive cues in ms
+wait_time = 400
+
+##Defaults
+# t_cue_spacing = 150  # distance between two consecutive cues in ms
+# wait_time = 1200
 
 # Frequencies
 input_f0 = 40. / 1000.  # poisson firing rate of input neurons in khz
@@ -109,7 +120,7 @@ n_cues = 2
 
 def get_data_dict(batch_size):
     # used for obtaining a new randomly generated batch of examples
-    seq_len = int(t_cue_spacing * n_cues + 1200)
+    seq_len = int(t_cue_spacing * n_cues + wait_time)
     spk_data, in_nums, target_data, _ = \
         generate_xor_task_data(batch_size=batch_size, seq_len=seq_len, n_neuron=n_in, recall_duration=150,
                                  p_group=0.3, t_cue=100, n_cues=2, t_interval=t_cue_spacing, f0=input_f0,
@@ -432,12 +443,39 @@ for i in range(4):
         if plot_out is not None:
             plt.savefig(plot_out)
 
+dict_flags = {
+    'n_batch': tf.app.flags.FLAGS.n_batch,
+    'n_iter': tf.app.flags.FLAGS.n_iter,
+    'learning_rate': tf.app.flags.FLAGS.learning_rate,
+    'stop_crit': tf.app.flags.FLAGS.stop_crit,
+    'print_every': tf.app.flags.FLAGS.print_every,
+    'validate_every': tf.app.flags.FLAGS.validate_every,
+    'eprop': tf.app.flags.FLAGS.eprop,
+    'eprop_impl': tf.app.flags.FLAGS.eprop_impl,
+    'feedback': tf.app.flags.FLAGS.feedback,
+    'f_regularization_type': tf.app.flags.FLAGS.f_regularization_type,
+    'tau_a': tf.app.flags.FLAGS.tau_a,
+    'thr': tf.app.flags.FLAGS.thr,
+    'tau_v': tf.app.flags.FLAGS.tau_v,
+    'tau_out': tf.app.flags.FLAGS.tau_out,
+    'reg_f': tf.app.flags.FLAGS.reg_f,
+    'reg_rate': tf.app.flags.FLAGS.reg_rate,
+    'n_ref': tf.app.flags.FLAGS.n_ref,
+    'dt': tf.app.flags.FLAGS.dt,
+    'dampening_factor': tf.app.flags.FLAGS.dampening_factor,
+    'sigma': tf.app.flags.FLAGS.sigma,
+    'c_coeff': tf.app.flags.FLAGS.c_coeff,
+    'window_size': tf.app.flags.FLAGS.window_size,
+    'do_plot': tf.app.flags.FLAGS.do_plot,
+    'device_placement': tf.app.flags.FLAGS.device_placement
+}
+
 print('''Statistics on the test set average error {:.2g} +- {:.2g} (averaged over 16 test batches of size {})'''
       .format(np.mean(test_errors), np.std(test_errors), FLAGS.n_batch))
 
 del sess
 
 #Save results to a file...
-to_save = {'test_error': np.mean(test_errors), 'test_error_std': np.std(test_errors), 'FLAGS': FLAGS}
+to_save = {'results': results, 'test_error': np.mean(test_errors), 'test_error_std': np.std(test_errors), 'FLAGS': dict_flags}
 with open(fn_out, 'wb') as handle:
     pickle.dump(to_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
