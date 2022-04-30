@@ -58,7 +58,7 @@ start_time = datetime.datetime.now()
 
 # training parameters
 tf.app.flags.DEFINE_integer('n_batch', 64, 'batch size')
-tf.app.flags.DEFINE_integer('n_iter', 1000, 'total number of iterations')
+tf.app.flags.DEFINE_integer('n_iter', 5000, 'total number of iterations')
 tf.app.flags.DEFINE_float('learning_rate', 0.005, 'Base learning rate.')
 tf.app.flags.DEFINE_float('stop_crit', 0.07, 'Stopping criterion. Stops training if error goes below this value')
 tf.app.flags.DEFINE_integer('print_every', 10, 'Print every')
