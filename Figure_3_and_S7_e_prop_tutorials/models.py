@@ -431,8 +431,6 @@ class EligALIF():
         gradient = tf.einsum('btj,btij->ij', learning_signal, e_trace)
         return gradient, e_trace, epsilon_v, epsilon_a
 
-
-
 def exp_convolve(tensor, decay):
     '''
     Filters a tensor with an exponential filter.

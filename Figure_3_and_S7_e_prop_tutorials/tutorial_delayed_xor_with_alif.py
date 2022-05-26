@@ -27,6 +27,8 @@ parser.add_argument("sigma", type=float, help="noise magnitude")
 parser.add_argument("c_coeff", type=float, help="correlation coefficient between noise given to all neurons")
 parser.add_argument("discont_w", type=float, help="width of discontinuity approximation (RDD window size)")
 
+parser.add_argument("--eprop", default = False, action = 'store_true', help="Whether to use BPTT or eprop")
+
 #CLI
 args = parser.parse_args()
 
@@ -65,7 +67,7 @@ tf.app.flags.DEFINE_integer('print_every', 10, 'Print every')
 tf.app.flags.DEFINE_integer('validate_every', 20, 'validate every')
 
 # training algorithm
-tf.app.flags.DEFINE_bool('eprop', False, 'Use e-prop to train network (BPTT if false)')
+tf.app.flags.DEFINE_bool('eprop', args.eprop, 'Use e-prop to train network (BPTT if false)')
 tf.app.flags.DEFINE_string('eprop_impl', 'autodiff', '["autodiff", "hardcoded"] Use tensorflow for computing e-prop '
                                                      'updates or implement equations directly')
 tf.app.flags.DEFINE_string('feedback', 'symmetric', '["random", "symmetric"] Use random or symmetric e-prop')
