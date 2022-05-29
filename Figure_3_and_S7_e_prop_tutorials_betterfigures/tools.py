@@ -257,8 +257,8 @@ def update_plot(plot_result_values, ax_list, plot_traces=False, batch=0, n_max_n
     ax.axis([0, presentation_steps[-1] + 1, -0.3, 1.1])
     ax.legend(handles=[line_output2, line_base], loc='lower center', fontsize=7,
               bbox_to_anchor=(0.5, -0.05), ncol=3)
-    ax.set_xticklabels([])
-    ax.set_xticks([])
+    #ax.set_xticklabels([])
+    #ax.set_xticks([])
 
     # plot learning signal
     if plot_traces:
@@ -313,10 +313,13 @@ def update_plot(plot_result_values, ax_list, plot_traces=False, batch=0, n_max_n
 
         ax.axis([0, presentation_steps[-1], np.min(epsilon), np.max(epsilon)])  # [xmin, xmax, ymin, ymax]
 
-        #     ax.set_xticks(np.linspace(0, epsilon.shape[0], 5))
-        #ax.set_xticks([0, 500, 1000, 1500, 2000])
+        ax.set_xticks(np.linspace(0, epsilon.shape[0], 5))
+        ax.set_xticks([0, 500, 1000, 1500, 2000])
 
         ax.set_ylabel('slow factor')
+
+    #ax.set_xticks(np.linspace(0, epsilon.shape[0], 5))
+    #ax.set_xticks([0, 500, 1000, 1500, 2000])
 
     ax.set_xlabel('Time in ms')
 

@@ -74,8 +74,10 @@ tf.app.flags.DEFINE_integer('validate_every', 20, 'validate every')
 
 # training algorithm
 tf.app.flags.DEFINE_bool('eprop', args.eprop, 'Use e-prop to train network (BPTT if false)')
+# tf.app.flags.DEFINE_string('eprop_impl', 'hardcoded', '["autodiff", "hardcoded"] Use tensorflow for computing e-prop '
+#                                                         'updates or implement equations directly')
 tf.app.flags.DEFINE_string('eprop_impl', 'autodiff', '["autodiff", "hardcoded"] Use tensorflow for computing e-prop '
-                                                     'updates or implement equations directly')
+                                                    'updates or implement equations directly')
 tf.app.flags.DEFINE_string('feedback', 'symmetric', '["random", "symmetric"] Use random or symmetric e-prop')
 tf.app.flags.DEFINE_string('f_regularization_type', 'simple', '["simple", "online"] Twos types of firing rate regularization.')
 
@@ -309,6 +311,8 @@ results_tensors = {
     'regularization_coeff': regularization_coeff,
 }
 
+#Correlation between cells
+alif_spike_rasters = []
 
 plot_result_tensors = {'input_spikes': input_spikes,
                        'input_nums': input_nums,
@@ -384,6 +388,8 @@ for k_iter in range(FLAGS.n_iter):
 
             plot_results_values = sess.run(plot_result_tensors, feed_dict=val_dict)
             plot_results_values['flags'] = flag_dict
+
+            alif_spike_rasters = plot_results_values['z']
 
             plot_trace = True if FLAGS.eprop_impl == 'hardcoded' else False
             update_plot(plot_results_values, ax_list, plot_traces=plot_trace, n_max_neuron_per_raster=20,
@@ -484,6 +490,7 @@ print('''Statistics on the test set average error {:.2g} +- {:.2g} (averaged ove
 del sess
 
 #Save results to a file...
-to_save = {'results': results, 'test_error': np.mean(test_errors), 'test_error_std': np.std(test_errors), 'FLAGS': dict_flags}
+to_save = {'results': results, 'test_error': np.mean(test_errors), 'test_error_std': np.std(test_errors), 'FLAGS': dict_flags, 'spike_rasters': alif_spike_rasters}
 with open(fn_out, 'wb') as handle:
     pickle.dump(to_save, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
